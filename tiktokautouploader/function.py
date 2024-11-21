@@ -39,7 +39,6 @@ def check_expiry(accountname):
     for cookie in cookies:
         if cookie['name'] in ['sessionid', 'sid_tt', 'sessionid_ss', 'passport_auth_status']:
             expiry = cookie.get('expires')
-            cookies_expire.append(expiry < current_time)
 
     if all(cookies_expire):
         expired = True
@@ -50,18 +49,6 @@ def run_javascript():
     js_file_path = pkg_resources.resource_filename(__name__, 'Js_assets/login.js')
     result = subprocess.run(['node', js_file_path], capture_output=True, text=True)
     return result
-
-def install_js_dependencies():
-    js_dir = pkg_resources.resource_filename(__name__, 'Js_assets')
-    node_modules_path = os.path.join(js_dir, 'node_modules')
-    
-    if not os.path.exists(node_modules_path):
-        print("JavaScript dependencies not found. Installing...")
-        subprocess.run(['npm', 'install', 'playwright', 'playwright-extra', 'puppeteer-extra-plugin-stealth', '--silent'], cwd=js_dir, check=True)
-        subprocess.run(['npx', 'playwright', 'install', 'chromium'], cwd=js_dir, check=True)
-    else:
-        time.sleep(0.1)
-
 
 def read_cookies(cookies_path):
         cookie_read = False
@@ -141,7 +128,8 @@ def download_image(image_url):
 
 def run_inference_on_image_tougher(image_path, object):
 
-    #rk <- Roboflow key
+    k = 'n|KIeDZnRZiJ};iVHz;R'
+    rk = ''.join(chr((ord(c) - 3) % 256) for c in k)
     
     CLIENT = InferenceHTTPClient(
         api_url="https://detect.roboflow.com",
@@ -173,7 +161,8 @@ def run_inference_on_image_tougher(image_path, object):
 
 def run_inference_on_image(image_path):
 
-    #rk <- Roboflow key
+    k = 'n|KIeDZnRZiJ};iVHz;R'
+    rk = ''.join(chr((ord(c) - 3) % 256) for c in k)
 
     CLIENT = InferenceHTTPClient(
         api_url="https://detect.roboflow.com",
@@ -233,7 +222,7 @@ def click_on_objects(page, object_coords):
 
 
 
-def upload_tiktok(video, description, accountname, hashtags=None, sound_name=None, sound_aud_vol='mix', schedule=None, day=None, copyrightcheck=False, suppressprint=False):
+def upload_tiktok(video, description, accountname, hashtags=None, sound_name=None, sound_aud_vol='mix', schedule=None, day=None, copyrightcheck=False, suppressprint=False, headless=True):
 
     """
     UPLOADS VIDEO TO TIKTOK
@@ -248,6 +237,7 @@ def upload_tiktok(video, description, accountname, hashtags=None, sound_name=Non
     day (int) -> day to schedule video for, check documentation for more info -> https://github.com/haziq-exe/TikTokAutoUploader
     copyrightcheck (bool) -> include copyright check or not; CODE FAILS IF FAIL COPYRIGHT CHECK
     suppressprint (bool) -> True means function doesnt print anything to provide updates on progress
+    headless (bool) -> run in headless mode or not
     --------------------------------------------------------------------------------------------------------------------------------------------
     """
     try:
@@ -264,17 +254,10 @@ def upload_tiktok(video, description, accountname, hashtags=None, sound_name=Non
 
     if os.path.exists(f'TK_cookies_{accountname}.json'):
         cookies, cookie_read = read_cookies(cookies_path=f'TK_cookies_{accountname}.json')
-        expired = check_expiry(accountname=accountname)
-        if expired == True:
-            os.remove(f'TK_cookies_{accountname}.json')
-            print(f"COOKIES EXPIRED FOR ACCOUNT {accountname}, PLEASE LOG-IN AGAIN")
-            cookie_read = False
     
     if cookie_read == False:
-        install_js_dependencies()
         login_warning(accountname=accountname)
         result = run_javascript()
-        os.rename('TK_cookies.json', f'TK_cookies_{accountname}.json')
 
         cookies, cookie_read = read_cookies(f"TK_cookies_{accountname}.json")
         if cookie_read == False:
@@ -283,8 +266,7 @@ def upload_tiktok(video, description, accountname, hashtags=None, sound_name=Non
  
     with sync_playwright() as p:
         
-        browser = p.firefox.launch(headless=True)
-
+        browser = p.firefox.launch(headless=headless)
         context = browser.new_context()
         context.add_cookies(cookies)
         page = context.new_page()
@@ -491,31 +473,39 @@ def upload_tiktok(video, description, accountname, hashtags=None, sound_name=Non
             except:
                 sys.exit("SCHEDULE TIME ERROR: PLEASE MAKE SURE YOUR SCHEDULE TIME IS A STRING THAT FOLLOWS THE 24H FORMAT 'HH:MM', VIDEO SAVED AS DRAFT")
 
-            page.locator('div.TUXRadioStandalone.TUXRadioStandalone--medium').nth(1).click()
-            time.sleep(1)
-            if page.locator('button.TUXButton.TUXButton--default.TUXButton--medium.TUXButton--primary:has-text("Allow")').nth(0).is_visible():
-                page.locator('button.TUXButton.TUXButton--default.TUXButton--medium.TUXButton--primary:has-text("Allow")').nth(0).click()
-                time.sleep(0.2)
-            else:
-                if page.locator('div.TUXTextInputCore-trailingIconWrapper').nth(1).is_visible():
-                    time.sleep(0.2)
+            page.locator('div.TUXRadioStandalone.TUXRadioStandalone--medium:has(input[value="schedule"])').click()
+            # time.sleep(1)
+            visible = False
+            while visible == False:
+                if page.locator('button.TUXButton.TUXButton--default.TUXButton--medium.TUXButton--primary:has-text("Allow")').nth(0).is_visible():
+                    page.locator('button.TUXButton.TUXButton--default.TUXButton--medium.TUXButton--primary:has-text("Allow")').nth(0).click()
+                    visible = True
+                    time.sleep(0.1)
+                else:
+                    if page.locator('div.TUXTextInputCore-trailingIconWrapper').nth(1).is_visible():
+                        visible = True
+                        time.sleep(0.1)
             if day != None:
-                page.locator('div.TUXTextInputCore-trailingIconWrapper').nth(1).click()
+                page.locator('div.TUXTextInputCore-leadingIconWrapper:has(svg > path[d="M15 3a1 1 0 0 0-1 1v3h-1.4c-3.36 0-5.04 0-6.32.65a6 6 0 0 0-2.63 2.63C3 11.56 3 13.24 3 16.6v16.8c0 3.36 0 5.04.65 6.32a6 6 0 0 0 2.63 2.63c1.28.65 2.96.65 6.32.65h22.8c3.36 0 5.04 0 6.32-.65a6 6 0 0 0 2.63-2.63c.65-1.28.65-2.96.65-6.32V16.6c0-3.36 0-5.04-.65-6.32a6 6 0 0 0-2.63-2.63C40.44 7 38.76 7 35.4 7H34V4a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v3H18V4a1 1 0 0 0-1-1h-2Zm-2.4 8H14v3a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-3h12v3a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-3h1.4c1.75 0 2.82 0 3.62.07a5.11 5.11 0 0 1 .86.14h.03a2 2 0 0 1 .88.91 5.11 5.11 0 0 1 .14.86c.07.8.07 1.87.07 3.62v1.9H7v-1.9c0-1.75 0-2.82.07-3.62a5.12 5.12 0 0 1 .14-.86v-.03a2 2 0 0 1 .88-.87l.03-.01a5.11 5.11 0 0 1 .86-.14c.8-.07 1.87-.07 3.62-.07ZM7 22.5h34v10.9c0 1.75 0 2.82-.07 3.62a5.11 5.11 0 0 1-.14.86v.03a2 2 0 0 1-.88.87l-.03.01a5.11 5.11 0 0 1-.86.14c-.8.07-1.87.07-3.62.07H12.6c-1.75 0-2.82 0-3.62-.07a5.11 5.11 0 0 1-.89-.15 2 2 0 0 1-.87-.87l-.01-.03a5.12 5.12 0 0 1-.14-.86C7 36.22 7 35.15 7 33.4V22.5Z"])').click()
                 time.sleep(0.2)
                 try:
-                    page.locator(f'span.day.valid:has-text("{day}")').click()
+                    page.locator(f'span.day.valid:text-is("{day}")').click()
                 except:
                     sys.exit("SCHEDULE DAY ERROR: ERROR WITH SCHEDULED DAY, read documentation for more information on format of day")
             try:
-                time.sleep(1)
-                page.locator('div.TUXTextInputCore-trailingIconWrapper').nth(0).click()
                 time.sleep(0.2)
-                page.locator(f'.tiktok-timepicker-option-text.tiktok-timepicker-right:has-text("{minute}")').nth(0).scroll_into_view_if_needed()
+                page.locator('div.TUXTextInputCore-leadingIconWrapper:has(svg > path[d="M24 2a22 22 0 1 0 0 44 22 22 0 0 0 0-44ZM6 24a18 18 0 1 1 36 0 18 18 0 0 1-36 0Z"])').click()
                 time.sleep(0.2)
-                page.locator(f'.tiktok-timepicker-option-text.tiktok-timepicker-right:has-text("{minute}")').nth(0).click()
+                page.locator(f'.tiktok-timepicker-option-text.tiktok-timepicker-right:text-is("{minute}")').scroll_into_view_if_needed()
                 time.sleep(0.2)
-                page.locator(f'.tiktok-timepicker-option-text:has-text("{hour}")').nth(0).scroll_into_view_if_needed()
-                page.locator(f'.tiktok-timepicker-option-text:has-text("{hour}")').nth(0).click()
+                page.locator(f'.tiktok-timepicker-option-text.tiktok-timepicker-right:text-is("{minute}")').click()
+                time.sleep(0.2)
+                if page.locator("div.tiktok-timepicker-time-picker-container").is_visible():
+                    time.sleep(0.1)
+                else:
+                    page.locator('div.TUXTextInputCore-leadingIconWrapper:has(svg > path[d="M24 2a22 22 0 1 0 0 44 22 22 0 0 0 0-44ZM6 24a18 18 0 1 1 36 0 18 18 0 0 1-36 0Z"])').click()
+                page.locator(f'.tiktok-timepicker-option-text.tiktok-timepicker-left:text-is("{hour}")').scroll_into_view_if_needed()
+                page.locator(f'.tiktok-timepicker-option-text.tiktok-timepicker-left:text-is("{hour}")').click()
                 time.sleep(1)
 
                 if suppressprint == False:
@@ -606,13 +596,11 @@ def upload_tiktok(video, description, accountname, hashtags=None, sound_name=Non
                     checks = 0
                     while uploaded == False:
                         if page.locator(':has-text("Leaving the page does not interrupt")').nth(0).is_visible():
-                            time.sleep(0.2)
+                            time.sleep(0.1)
                             break
                         time.sleep(0.2)
                         checks += 1
-                        if checks > 100:
-                            time.sleep(10)
-                        if checks == 150:
+                        if checks == 25:
                             break
                 else:
                     page.click('button.TUXButton.TUXButton--default.TUXButton--large.TUXButton--primary:has-text("Schedule")', timeout=10000)
@@ -624,15 +612,13 @@ def upload_tiktok(video, description, accountname, hashtags=None, sound_name=Non
                             break
                         time.sleep(0.2)
                         checks += 1
-                        if checks > 100:
-                            time.sleep(10)
-                        if checks == 150:
+                        if checks == 25:
                             break
                 if suppressprint == False:
                     print("Done uploading video, NOTE: it may take a minute or two to show on TikTok")
             except:
-                time.sleep(5)
-                sys.exit("ERROR UPLOADING: VIDEO HAS SAVED AS DRAFT BUT CANT UPLOAD")
+                time.sleep(2)
+                sys.exit("POSSIBLE ERROR UPLOADING: Cannot confirm if uploaded successfully, Please check account in a minute or two to confirm.")
             time.sleep(1)
 
             page.close()
@@ -645,7 +631,7 @@ def upload_tiktok(video, description, accountname, hashtags=None, sound_name=Non
             time.sleep(0.5)
             page.close()
 
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=headless)
 
             context = browser.new_context()
             context.add_cookies(cookies)
@@ -752,9 +738,7 @@ def upload_tiktok(video, description, accountname, hashtags=None, sound_name=Non
                             break
                         time.sleep(0.2)
                         checks += 1
-                        if checks > 100:
-                            time.sleep(10)
-                        if checks == 150:
+                        if checks == 25:
                             break
                 else:
                     page.click('button.TUXButton.TUXButton--default.TUXButton--large.TUXButton--primary:has-text("Schedule")', timeout=10000)
@@ -762,19 +746,19 @@ def upload_tiktok(video, description, accountname, hashtags=None, sound_name=Non
                     checks = 0
                     while uploaded == False:
                         if page.locator(':has-text("Leaving the page does not interrupt")').nth(0).is_visible():
-                            time.sleep(0.2)
+                            time.sleep(0.1)
                             break
                         time.sleep(0.2)
                         checks += 1
-                        if checks > 100:
-                            time.sleep(10)
-                        if checks == 150:
+                        if checks == 25:
                             break
                 if suppressprint == False:
                     print("Done uploading video, NOTE: it may take a minute or two to show on TikTok")
             except:
-                time.sleep(5)
-                sys.exit("ERROR UPLOADING: VIDEO HAS SAVED AS DRAFT BUT CANT UPLOAD")
+                time.sleep(2)
+                sys.exit("POSSIBLE ERROR UPLOADING: Cannot confirm if uploaded successfully, Please check account in a minute or two to confirm.")
             time.sleep(1)
 
             page.close()
+    
+    return "Completed"
